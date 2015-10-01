@@ -14,6 +14,32 @@ use nalgebra::Vec2;
 mod settings;
 use settings::*;
 
+struct Ship {
+    pub rotation         : f32,
+    pub position         : Vec2<f32>,
+    pub velocity         : Vec2<f32>,
+    pub prev_position    : Vec2<f32>,
+    pub prev_rotation    : f32,
+    pub left_is_pressed  : bool,
+    pub right_is_pressed : bool,
+    pub up_is_pressed    : bool,
+}
+
+impl Ship {
+    fn new() -> Ship {
+        Ship {
+            rotation         : 0f32,
+            position         : Vec2::new(0.3f32, 0.1f32),
+            velocity         : Vec2::new(0.0f32, 0.0f32),
+            prev_position    : Vec2::new(0.3f32, 0.1f32),
+            prev_rotation    : 0f32,
+            left_is_pressed  : false,
+            right_is_pressed : false,
+            up_is_pressed    : false,
+        }
+    }
+}
+
 fn main() {
     use glium::DisplayBuild;
 
@@ -74,16 +100,6 @@ fn main() {
     let mut accumulator = 0;
     let mut previous_clock = clock_ticks::precise_time_ns();
 
-    let mut rotation = 0f32;
-    let mut position = Vec2::new(0.3f32, 0.1f32);
-    let mut velocity = Vec2::new(0.0f32, 0.0f32);
-    let mut prev_position = position;
-    let mut prev_rotation = rotation;
-
-    let mut left_is_pressed = false;
-    let mut right_is_pressed = false;
-    let mut up_is_pressed = false;
-
     let mut frames = 0;
     let mut fpses = Vec::new();
 
@@ -97,6 +113,8 @@ fn main() {
             [0.0, 0.0, 0.0, 1.0f32]
         ]
     };
+
+    let mut ship = Ship::new();
 
     loop {
         let mut target = display.draw();
@@ -118,13 +136,12 @@ fn main() {
 
             glium::VertexBuffer::new(&display,
                 &[
-                    Vertex { position: [-0.05, -0.025], color: [0.3, 0.3, 0.3], rotation: prev_rotation, global_position: *prev_position.as_array() },
-                    Vertex { position: [ 0.05,  0.000], color: [0.3, 0.3, 0.3], rotation: prev_rotation, global_position: *prev_position.as_array() },
-                    Vertex { position: [-0.05,  0.025], color: [0.3, 0.3, 0.3], rotation: prev_rotation, global_position: *prev_position.as_array() },
-
-                    Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() },
-                    Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() },
-                    Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() },
+                    Vertex { position: [-0.05, -0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
+                    Vertex { position: [ 0.05,  0.000], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
+                    Vertex { position: [-0.05,  0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
+                    Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
+                    Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
+                    Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
                 ]
             ).unwrap()
         };
@@ -138,9 +155,11 @@ fn main() {
                 glutin::Event::Closed => return,
                 glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::C)) => { do_clear = !do_clear },
                 glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Escape)) => return,
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Left)) => { left_is_pressed = pressed == ElementState::Pressed },
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Right)) => { right_is_pressed = pressed == ElementState::Pressed },
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Up)) => { up_is_pressed = pressed == ElementState::Pressed },
+
+                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Left )) => { ship.left_is_pressed  = pressed == ElementState::Pressed },
+                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Right)) => { ship.right_is_pressed = pressed == ElementState::Pressed },
+                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Up   )) => { ship.up_is_pressed    = pressed == ElementState::Pressed },
+
                 glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(keycode)) => { println!("Key pressed but not handled: {:?}", keycode); },
                 _ => ()
             }
@@ -171,19 +190,19 @@ fn main() {
         while accumulator >= FIXED_TIME_STAMP {
             accumulator -= FIXED_TIME_STAMP;
 
-            prev_position = position;
-            prev_rotation = rotation;
+            ship.prev_position = ship.position;
+            ship.prev_rotation = ship.rotation;
 
-            if left_is_pressed {
-                rotation += settings.rotation_speed;
+            if ship.left_is_pressed {
+                ship.rotation += settings.rotation_speed;
             }
-            if right_is_pressed {
-                rotation -= settings.rotation_speed;
+            if ship.right_is_pressed {
+                ship.rotation -= settings.rotation_speed;
             }
-            let acceleration = if up_is_pressed { settings.acceleration } else { 0f32 };
-            let direction = Vec2::new(f32::cos(rotation), f32::sin(rotation));
-            velocity = (velocity + direction * acceleration) * settings.drag;
-            position = position + velocity;
+            let acceleration = if ship.up_is_pressed { settings.acceleration } else { 0f32 };
+            let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
+            ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
+            ship.position = ship.position + ship.velocity;
         }
     }
 
