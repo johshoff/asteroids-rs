@@ -91,10 +91,6 @@ fn main() {
         display_builder.build_glium().unwrap()
     };
 
-    let index_buffer = glium::IndexBuffer::new(&display, PrimitiveType::TrianglesList,
-                                               &[0, 1, 2,
-                                                 3, 4, 5u16]).unwrap();
-
     let program = program!(&display,
         140 => {
             vertex: "
@@ -150,11 +146,19 @@ fn main() {
         ]
     };
 
-    let mut player = LocalPlayer::new(VirtualKeyCode::Left,
-                                      VirtualKeyCode::Right,
-                                      VirtualKeyCode::Up);
+    let mut players = Vec::new();
 
-    player.spawn().unwrap();
+    players.push(LocalPlayer::new(VirtualKeyCode::Left,
+                                  VirtualKeyCode::Right,
+                                  VirtualKeyCode::Up));
+
+    players.push(LocalPlayer::new(VirtualKeyCode::A,
+                                  VirtualKeyCode::D,
+                                  VirtualKeyCode::W));
+
+    for player in players.iter_mut() {
+        player.spawn().unwrap();
+    }
 
     loop {
         let mut target = display.draw();
@@ -163,7 +167,7 @@ fn main() {
             target.clear_color(0.0, 0.0, 0.0, 0.0);
         }
 
-        let vertex_buffer = {
+        let (vertex_buffer, index_buffer) = {
             #[derive(Copy, Clone)]
             struct Vertex {
                 position: [f32; 2],
@@ -174,22 +178,32 @@ fn main() {
 
             implement_vertex!(Vertex, position, color, rotation, global_position);
 
-
             let mut vertices = Vec::new();
+            let mut indices = Vec::new();
 
-            match *player.ship() {
-                None => {}
-                Some(ref ship) => {
-                    vertices.push(Vertex { position: [-0.05, -0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
-                    vertices.push(Vertex { position: [ 0.05,  0.000], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
-                    vertices.push(Vertex { position: [-0.05,  0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
-                    vertices.push(Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
-                    vertices.push(Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
-                    vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
-                }
-            };
+            for player in players.iter() {
+                match *player.ship() {
+                    None => {}
+                    Some(ref ship) => {
+                        let base_index = vertices.len() as u16;
+                        for i in 0..6 {
+                            indices.push(base_index + i);
+                        }
 
-            glium::VertexBuffer::new(&display, &vertices).unwrap()
+                        vertices.push(Vertex { position: [-0.05, -0.025], color: [1.0, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                        vertices.push(Vertex { position: [ 0.05,  0.000], color: [1.0, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                        vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                        vertices.push(Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                        vertices.push(Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                        vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                    }
+                };
+            }
+
+            let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
+            let index_buffer = glium::IndexBuffer::new(&display, PrimitiveType::TrianglesList, &indices).unwrap();
+
+            (vertex_buffer, index_buffer)
         };
 
         target.draw(&vertex_buffer, &index_buffer, &program, &uniforms, &Default::default()).unwrap();
@@ -204,7 +218,7 @@ fn main() {
 
                 glutin::Event::KeyboardInput(pressed, _, Some(key)) => {
                     let is_pressed = pressed == ElementState::Pressed;
-                    let handled = player.on_key(key, is_pressed);
+                    let handled = players.iter_mut().any(|player| player.on_key(key, is_pressed));
 
                     if !handled && is_pressed {
                         println!("Key pressed but not handled: {:?}", key);
@@ -240,22 +254,24 @@ fn main() {
         while accumulator >= FIXED_TIME_STAMP {
             accumulator -= FIXED_TIME_STAMP;
 
-            match *player.ship() {
-                None => {}
-                Some(ref mut ship) => {
-                    ship.prev_position = ship.position;
-                    ship.prev_rotation = ship.rotation;
+            for player in players.iter_mut() {
+                match player.ship {
+                    None => {}
+                    Some(ref mut ship) => {
+                        ship.prev_position = ship.position;
+                        ship.prev_rotation = ship.rotation;
 
-                    if player.left_is_pressed {
-                        ship.rotation += settings.rotation_speed;
+                        if player.left_is_pressed {
+                            ship.rotation += settings.rotation_speed;
+                        }
+                        if player.right_is_pressed {
+                            ship.rotation -= settings.rotation_speed;
+                        }
+                        let acceleration = if player.up_is_pressed { settings.acceleration } else { 0f32 };
+                        let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
+                        ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
+                        ship.position = ship.position + ship.velocity;
                     }
-                    if player.right_is_pressed {
-                        ship.rotation -= settings.rotation_speed;
-                    }
-                    let acceleration = if player.up_is_pressed { settings.acceleration } else { 0f32 };
-                    let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
-                    ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
-                    ship.position = ship.position + ship.velocity;
                 }
             }
         }
