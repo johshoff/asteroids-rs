@@ -20,9 +20,48 @@ struct Ship {
     pub velocity         : Vec2<f32>,
     pub prev_position    : Vec2<f32>,
     pub prev_rotation    : f32,
+}
+
+struct LocalPlayer {
+    ship                 : Option<Ship>,
     pub left_is_pressed  : bool,
     pub right_is_pressed : bool,
     pub up_is_pressed    : bool,
+    pub left_key         : VirtualKeyCode,
+    pub right_key        : VirtualKeyCode,
+    pub up_key           : VirtualKeyCode,
+}
+
+impl LocalPlayer {
+    fn new(left_key : VirtualKeyCode, right_key : VirtualKeyCode, up_key : VirtualKeyCode) -> Self {
+        LocalPlayer {
+            ship             : None,
+            left_is_pressed  : false,
+            right_is_pressed : false,
+            up_is_pressed    : false,
+            left_key         : left_key,
+            right_key        : right_key,
+            up_key           : up_key,
+        }
+    }
+
+    fn ship(&self) -> &Option<Ship> {
+        &self.ship
+    }
+
+    fn spawn(&mut self) -> Result<(), ()> {
+        match self.ship {
+            None => { self.ship = Some(Ship::new()); Ok(()) },
+            _    => Err(()),
+        }
+    }
+
+    fn on_key(&mut self, key: VirtualKeyCode, pressed: bool) -> bool {
+        if      key == self.left_key  { self.left_is_pressed  = pressed; true }
+        else if key == self.right_key { self.right_is_pressed = pressed; true }
+        else if key == self.up_key    { self.up_is_pressed    = pressed; true }
+        else { false }
+    }
 }
 
 impl Ship {
@@ -33,9 +72,6 @@ impl Ship {
             velocity         : Vec2::new(0.0f32, 0.0f32),
             prev_position    : Vec2::new(0.3f32, 0.1f32),
             prev_rotation    : 0f32,
-            left_is_pressed  : false,
-            right_is_pressed : false,
-            up_is_pressed    : false,
         }
     }
 }
@@ -114,7 +150,11 @@ fn main() {
         ]
     };
 
-    let mut ship = Ship::new();
+    let mut player = LocalPlayer::new(VirtualKeyCode::Left,
+                                      VirtualKeyCode::Right,
+                                      VirtualKeyCode::Up);
+
+    player.spawn().unwrap();
 
     loop {
         let mut target = display.draw();
@@ -134,16 +174,22 @@ fn main() {
 
             implement_vertex!(Vertex, position, color, rotation, global_position);
 
-            glium::VertexBuffer::new(&display,
-                &[
-                    Vertex { position: [-0.05, -0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
-                    Vertex { position: [ 0.05,  0.000], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
-                    Vertex { position: [-0.05,  0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() },
-                    Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
-                    Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
-                    Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() },
-                ]
-            ).unwrap()
+
+            let mut vertices = Vec::new();
+
+            match *player.ship() {
+                None => {}
+                Some(ref ship) => {
+                    vertices.push(Vertex { position: [-0.05, -0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                    vertices.push(Vertex { position: [ 0.05,  0.000], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                    vertices.push(Vertex { position: [-0.05,  0.025], color: [0.3, 0.3, 0.3], rotation: ship.prev_rotation, global_position: *ship.prev_position.as_array() });
+                    vertices.push(Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                    vertices.push(Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                    vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
+                }
+            };
+
+            glium::VertexBuffer::new(&display, &vertices).unwrap()
         };
 
         target.draw(&vertex_buffer, &index_buffer, &program, &uniforms, &Default::default()).unwrap();
@@ -156,11 +202,15 @@ fn main() {
                 glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::C)) => { do_clear = !do_clear },
                 glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(VirtualKeyCode::Escape)) => return,
 
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Left )) => { ship.left_is_pressed  = pressed == ElementState::Pressed },
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Right)) => { ship.right_is_pressed = pressed == ElementState::Pressed },
-                glutin::Event::KeyboardInput(pressed, _, Some(VirtualKeyCode::Up   )) => { ship.up_is_pressed    = pressed == ElementState::Pressed },
+                glutin::Event::KeyboardInput(pressed, _, Some(key)) => {
+                    let is_pressed = pressed == ElementState::Pressed;
+                    let handled = player.on_key(key, is_pressed);
 
-                glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(keycode)) => { println!("Key pressed but not handled: {:?}", keycode); },
+                    if !handled && is_pressed {
+                        println!("Key pressed but not handled: {:?}", key);
+                    }
+                },
+
                 _ => ()
             }
         }
@@ -190,19 +240,24 @@ fn main() {
         while accumulator >= FIXED_TIME_STAMP {
             accumulator -= FIXED_TIME_STAMP;
 
-            ship.prev_position = ship.position;
-            ship.prev_rotation = ship.rotation;
+            match *player.ship() {
+                None => {}
+                Some(ref mut ship) => {
+                    ship.prev_position = ship.position;
+                    ship.prev_rotation = ship.rotation;
 
-            if ship.left_is_pressed {
-                ship.rotation += settings.rotation_speed;
+                    if player.left_is_pressed {
+                        ship.rotation += settings.rotation_speed;
+                    }
+                    if player.right_is_pressed {
+                        ship.rotation -= settings.rotation_speed;
+                    }
+                    let acceleration = if player.up_is_pressed { settings.acceleration } else { 0f32 };
+                    let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
+                    ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
+                    ship.position = ship.position + ship.velocity;
+                }
             }
-            if ship.right_is_pressed {
-                ship.rotation -= settings.rotation_speed;
-            }
-            let acceleration = if ship.up_is_pressed { settings.acceleration } else { 0f32 };
-            let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
-            ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
-            ship.position = ship.position + ship.velocity;
         }
     }
 
