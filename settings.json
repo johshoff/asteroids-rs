@@ -1,6 +1,6 @@
 {
 "rotation_speed": 0.003,
-"drag": 0.992,
+"drag": 0.008,
 "acceleration": 0.00003,
 "print_fps": false,
 "fullscreen": false

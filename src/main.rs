@@ -14,6 +14,11 @@ use nalgebra::Vec2;
 mod settings;
 use settings::*;
 
+enum Integrator {
+    ForwardEuler,
+    Verlet,
+}
+
 struct Ship {
     pub rotation         : f32,
     pub position         : Vec2<f32>,
@@ -30,10 +35,11 @@ struct LocalPlayer {
     pub left_key         : VirtualKeyCode,
     pub right_key        : VirtualKeyCode,
     pub up_key           : VirtualKeyCode,
+    pub integrator       : Integrator,
 }
 
 impl LocalPlayer {
-    fn new(left_key : VirtualKeyCode, right_key : VirtualKeyCode, up_key : VirtualKeyCode) -> Self {
+    fn new(left_key : VirtualKeyCode, right_key : VirtualKeyCode, up_key : VirtualKeyCode, integrator : Integrator) -> Self {
         LocalPlayer {
             ship             : None,
             left_is_pressed  : false,
@@ -42,6 +48,7 @@ impl LocalPlayer {
             left_key         : left_key,
             right_key        : right_key,
             up_key           : up_key,
+            integrator       : integrator,
         }
     }
 
@@ -150,11 +157,18 @@ fn main() {
 
     players.push(LocalPlayer::new(VirtualKeyCode::Left,
                                   VirtualKeyCode::Right,
-                                  VirtualKeyCode::Up));
+                                  VirtualKeyCode::Up,
+                                  Integrator::ForwardEuler));
 
     players.push(LocalPlayer::new(VirtualKeyCode::A,
                                   VirtualKeyCode::D,
-                                  VirtualKeyCode::W));
+                                  VirtualKeyCode::W,
+                                  Integrator::Verlet));
+
+    players.push(LocalPlayer::new(VirtualKeyCode::F,
+                                  VirtualKeyCode::H,
+                                  VirtualKeyCode::T,
+                                  Integrator::ForwardEuler));
 
     for player in players.iter_mut() {
         player.spawn().unwrap();
@@ -258,6 +272,8 @@ fn main() {
                 match player.ship {
                     None => {}
                     Some(ref mut ship) => {
+                        let prev_prev = ship.prev_position;
+
                         ship.prev_position = ship.position;
                         ship.prev_rotation = ship.rotation;
 
@@ -269,8 +285,17 @@ fn main() {
                         }
                         let acceleration = if player.up_is_pressed { settings.acceleration } else { 0f32 };
                         let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
-                        ship.velocity = (ship.velocity + direction * acceleration) * settings.drag;
-                        ship.position = ship.position + ship.velocity;
+
+                        match player.integrator {
+                            Integrator::ForwardEuler => {
+                                ship.velocity = (ship.velocity + direction * acceleration) * (1f32 - settings.drag);
+                                ship.position = ship.position + ship.velocity;
+                            },
+                            Integrator::Verlet => {
+                                let drag = (ship.position - prev_prev) * settings.drag;
+                                ship.position = ship.position + ship.position - prev_prev + (direction * acceleration) - drag;
+                            },
+                        }
                     }
                 }
             }
