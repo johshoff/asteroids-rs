@@ -2,8 +2,10 @@
 name = "game_client"
 version = "0.1.0"
 dependencies = [
+ "capnp 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "glium 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mio 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "nalgebra 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -58,6 +60,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "byteorder"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "bytes"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "capnp"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "byteorder 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "cfg-if"
@@ -381,6 +396,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mio"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "bytes 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slab 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "mmap"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -407,6 +436,15 @@ dependencies = [
  "num 0.1.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nix"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -481,6 +519,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "slab"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "smallvec"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -544,6 +587,14 @@ dependencies = [
  "byteorder 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile 1.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "wayland-client 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "winapi"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

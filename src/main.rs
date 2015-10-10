@@ -3,88 +3,71 @@ extern crate glium;
 extern crate clock_ticks;
 extern crate nalgebra;
 extern crate rustc_serialize;
+extern crate capnp;
+extern crate mio;
 
-use std::f32;
+mod network_capnp;
+mod settings;
+mod server;
+mod common;
+
 use glium::Surface;
 use glium::glutin;
 use glium::glutin::*;
 use glium::index::PrimitiveType;
 use nalgebra::Vec2;
+use mio::udp::*;
+use mio::buf::SliceBuf;
+use capnp::serialize_packed;
 
-mod settings;
+use network_capnp::{player_status, game_status};
 use settings::*;
-
-enum Integrator {
-    ForwardEuler,
-    Verlet,
-}
-
-struct Ship {
-    pub rotation         : f32,
-    pub position         : Vec2<f32>,
-    pub velocity         : Vec2<f32>,
-    pub prev_position    : Vec2<f32>,
-    pub prev_rotation    : f32,
-}
+use common::*;
 
 struct LocalPlayer {
-    ship                 : Option<Ship>,
-    pub left_is_pressed  : bool,
-    pub right_is_pressed : bool,
-    pub up_is_pressed    : bool,
+    pub pilot            : Pilot,
     pub left_key         : VirtualKeyCode,
     pub right_key        : VirtualKeyCode,
     pub up_key           : VirtualKeyCode,
-    pub integrator       : Integrator,
 }
 
 impl LocalPlayer {
     fn new(left_key : VirtualKeyCode, right_key : VirtualKeyCode, up_key : VirtualKeyCode, integrator : Integrator) -> Self {
         LocalPlayer {
-            ship             : None,
-            left_is_pressed  : false,
-            right_is_pressed : false,
-            up_is_pressed    : false,
+            pilot            : Pilot::new(integrator),
             left_key         : left_key,
             right_key        : right_key,
             up_key           : up_key,
-            integrator       : integrator,
         }
-    }
-
-    fn ship(&self) -> &Option<Ship> {
-        &self.ship
     }
 
     fn spawn(&mut self) -> Result<(), ()> {
-        match self.ship {
-            None => { self.ship = Some(Ship::new()); Ok(()) },
-            _    => Err(()),
-        }
+        self.pilot.spawn()
     }
 
     fn on_key(&mut self, key: VirtualKeyCode, pressed: bool) -> bool {
-        if      key == self.left_key  { self.left_is_pressed  = pressed; true }
-        else if key == self.right_key { self.right_is_pressed = pressed; true }
-        else if key == self.up_key    { self.up_is_pressed    = pressed; true }
+        if      key == self.left_key  { self.pilot.left_is_pressed  = pressed; true }
+        else if key == self.right_key { self.pilot.right_is_pressed = pressed; true }
+        else if key == self.up_key    { self.pilot.up_is_pressed    = pressed; true }
         else { false }
     }
 }
 
-impl Ship {
-    fn new() -> Ship {
-        Ship {
-            rotation         : 0f32,
-            position         : Vec2::new(0.3f32, 0.1f32),
-            velocity         : Vec2::new(0.0f32, 0.0f32),
-            prev_position    : Vec2::new(0.3f32, 0.1f32),
-            prev_rotation    : 0f32,
+fn main() {
+    for argument in ::std::env::args().skip(1) {
+        match argument.as_ref() {
+            "server" => { ::server::run(); return; },
+            unknown  => panic!(format!("Unknown argument '{}'", unknown)),
         }
     }
+    client();
 }
 
-fn main() {
+fn client() {
     use glium::DisplayBuild;
+
+    let server_address = "0.0.0.0:9998".parse().unwrap();
+    let socket = UdpSocket::v4().unwrap();
 
     let settings = load_settings("settings.json");
 
@@ -136,8 +119,8 @@ fn main() {
         },
     ).unwrap();
 
-    let mut accumulator = 0;
     let mut previous_clock = clock_ticks::precise_time_ns();
+    let mut prev_message_sent = previous_clock;
 
     let mut frames = 0;
     let mut fpses = Vec::new();
@@ -159,7 +142,7 @@ fn main() {
                                   VirtualKeyCode::Right,
                                   VirtualKeyCode::Up,
                                   Integrator::ForwardEuler));
-
+/*
     players.push(LocalPlayer::new(VirtualKeyCode::A,
                                   VirtualKeyCode::D,
                                   VirtualKeyCode::W,
@@ -169,10 +152,14 @@ fn main() {
                                   VirtualKeyCode::H,
                                   VirtualKeyCode::T,
                                   Integrator::ForwardEuler));
-
+*/
     for player in players.iter_mut() {
         player.spawn().unwrap();
     }
+
+    let mut buffer = Vec::new();
+    let mut remote_ships : Vec<Ship> = Vec::new();
+    let mut last_message_timestamp = 0;
 
     loop {
         let mut target = display.draw();
@@ -195,6 +182,7 @@ fn main() {
             let mut vertices = Vec::new();
             let mut indices = Vec::new();
 
+            /*
             for player in players.iter() {
                 match *player.ship() {
                     None => {}
@@ -212,6 +200,23 @@ fn main() {
                         vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: ship.rotation     , global_position: *ship.position.as_array() });
                     }
                 };
+            }
+            */
+
+            let since_message = (clock_ticks::precise_time_ns() - last_message_timestamp) as f32 / 1_000_000f32;
+            for ship in remote_ships.iter() {
+                let base_index = vertices.len() as u16;
+                for i in 0..3 {
+                    indices.push(base_index + i);
+                }
+
+                // dead reconning position
+                let position = ship.position + ship.velocity * since_message;
+                let rotation = ship.rotation + ship.rotational_velocity * since_message;
+
+                vertices.push(Vertex { position: [-0.05, -0.025], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() });
+                vertices.push(Vertex { position: [ 0.05,  0.000], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() });
+                vertices.push(Vertex { position: [-0.05,  0.025], color: [1.0, 1.0, 1.0], rotation: rotation, global_position: *position.as_array() });
             }
 
             let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
@@ -252,54 +257,64 @@ fn main() {
                 fpses.push(frames);
                 frames = 0;
 
-                if fpses.len() == 5 {
+                if fpses.len() == 1 {
                     for fps in fpses.iter() {
-                        println!("FPS {}", fps);
+                        println!("FPS {}, last_message_timestamp={}", fps, last_message_timestamp);
                     }
                     fpses.clear();
                 }
             }
         }
 
-        accumulator += now - previous_clock;
-        previous_clock = now;
+        if now - prev_message_sent >= settings.message_interval_ms * 1_000_000 {
+            for player in players.iter() {
+                let mut message = ::capnp::message::Builder::new_default();
+                {
+                    let mut p = message.init_root::<player_status::Builder>();
+                    p.set_throttle  (player.pilot.up_is_pressed);
+                    p.set_turn_left (player.pilot.left_is_pressed);
+                    p.set_turn_right(player.pilot.right_is_pressed);
+                }
 
-        const FIXED_TIME_STAMP: u64 = 1_000_000; // = 1 millisecond
-        while accumulator >= FIXED_TIME_STAMP {
-            accumulator -= FIXED_TIME_STAMP;
+                serialize_packed::write_message(&mut buffer, &message).unwrap();
 
-            for player in players.iter_mut() {
-                match player.ship {
-                    None => {}
-                    Some(ref mut ship) => {
-                        let prev_prev = ship.prev_position;
+                let result = socket.send_to(&mut SliceBuf::wrap(&buffer), &server_address);
 
-                        ship.prev_position = ship.position;
-                        ship.prev_rotation = ship.rotation;
+                result.unwrap();
 
-                        if player.left_is_pressed {
-                            ship.rotation += settings.rotation_speed;
-                        }
-                        if player.right_is_pressed {
-                            ship.rotation -= settings.rotation_speed;
-                        }
-                        let acceleration = if player.up_is_pressed { settings.acceleration } else { 0f32 };
-                        let direction = Vec2::new(f32::cos(ship.rotation), f32::sin(ship.rotation));
+                buffer.clear();
+            }
+            prev_message_sent = now;
+        }
 
-                        match player.integrator {
-                            Integrator::ForwardEuler => {
-                                ship.velocity = (ship.velocity + direction * acceleration) * (1f32 - settings.drag);
-                                ship.position = ship.position + ship.velocity;
-                            },
-                            Integrator::Verlet => {
-                                let drag = (ship.position - prev_prev) * settings.drag;
-                                ship.position = ship.position + ship.position - prev_prev + (direction * acceleration) - drag;
-                            },
-                        }
-                    }
+        {
+            let reader_options = ::capnp::message::ReaderOptions::new();
+            let mut buffer = Vec::new(); // TODO: reuse buffer
+            let result = socket.recv_from(&mut buffer);
+            if let Ok(Some(_from_address)) = result {
+                let message_reader = ::capnp::serialize_packed::read_message(&mut
+                    ::std::io::BufReader::new(
+                        ::std::io::Cursor::new(buffer)),
+                    reader_options).unwrap();
+
+                let message = message_reader.get_root::<game_status::Reader>().unwrap();
+
+                last_message_timestamp = now;
+                remote_ships.clear();
+
+                for ship_msg in message.get_ships().unwrap().iter() {
+                    let mut ship = Ship::new();
+                    ship.rotation = ship_msg.get_ang();
+                    ship.rotational_velocity = ship_msg.get_dang();
+                    ship.position = Vec2::new(ship_msg.get_x() , ship_msg.get_y());
+                    ship.velocity = Vec2::new(ship_msg.get_dx(), ship_msg.get_dy());
+
+                    remote_ships.push(ship);
                 }
             }
         }
+
+        previous_clock = now;
     }
 
 }

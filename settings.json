@@ -3,5 +3,6 @@
 "drag": 0.008,
 "acceleration": 0.00003,
 "print_fps": false,
-"fullscreen": false
+"fullscreen": false,
+"message_interval_ms": 16
 }

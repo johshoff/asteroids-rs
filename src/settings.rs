@@ -5,11 +5,12 @@ use self::rustc_serialize::*;
 
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Settings  {
-    pub rotation_speed: f32,
-    pub drag:           f32,
-    pub acceleration:   f32,
-    pub print_fps:      bool,
-    pub fullscreen:     bool,
+    pub rotation_speed:      f32,
+    pub drag:                f32,
+    pub acceleration:        f32,
+    pub print_fps:           bool,
+    pub fullscreen:          bool,
+    pub message_interval_ms: u64,
 }
 
 pub fn load_settings(filename: &str) -> Settings {
