@@ -5,6 +5,7 @@ extern crate capnp;
 extern crate mio;
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use nalgebra::Vec2;
 use mio::udp::*;
 use mio::buf::SliceBuf;
@@ -12,6 +13,11 @@ use settings::load_settings;
 use common::*;
 use network_capnp::{player_status, game_status};
 use capnp::serialize_packed;
+
+struct Client {
+	last_message       : u64,
+	pilot              : Pilot,
+}
 
 pub fn run() {
     let server_address = "0.0.0.0:9998".parse().unwrap();
@@ -26,9 +32,13 @@ pub fn run() {
     let mut prev_message_sent = previous_clock;
     let reader_options = ::capnp::message::ReaderOptions::new();
 
-    let mut clients : HashMap<::std::net::SocketAddr, Pilot> = HashMap::new();
+    let mut clients : HashMap<SocketAddr, Client> = HashMap::new();
 
     loop {
+        let now = clock_ticks::precise_time_ns();
+        accumulator += now - previous_clock;
+        previous_clock = now;
+
         let mut buffer = Vec::new(); // TODO: reuse buffer
         let result = socket.recv_from(&mut buffer);
         if let Ok(Some(from_address)) = result {
@@ -42,9 +52,10 @@ pub fn run() {
             let updated = {
                 match clients.get_mut(&from_address) {
                     Some(ref mut client) => {
-                        client.left_is_pressed  = message.get_turn_left();
-                        client.right_is_pressed = message.get_turn_right();
-                        client.up_is_pressed    = message.get_throttle();
+                        client.pilot.left_is_pressed  = message.get_turn_left();
+                        client.pilot.right_is_pressed = message.get_turn_right();
+                        client.pilot.up_is_pressed    = message.get_throttle();
+                        client.last_message           = now;
                         true
                     }
                     None => false
@@ -53,22 +64,19 @@ pub fn run() {
 
             if !updated {
                 println!("New client from {:?}", from_address);
-                let mut player = Pilot::new(Integrator::ForwardEuler);
-                player.spawn().ok();
+                let mut pilot = Pilot::new(Integrator::ForwardEuler);
+                pilot.spawn().ok();
 
-                clients.insert(from_address, player);
+                clients.insert(from_address, Client { last_message: now, pilot: pilot });
             }
         }
-
-        let now = clock_ticks::precise_time_ns();
-        accumulator += now - previous_clock;
-        previous_clock = now;
 
         const FIXED_TIME_STAMP: u64 = 1_000_000; // = 1 millisecond
         while accumulator >= FIXED_TIME_STAMP {
             accumulator -= FIXED_TIME_STAMP;
 
-            for (_, player) in clients.iter_mut() {
+            for (_, client) in clients.iter_mut() {
+				let player = &mut client.pilot;
                 match player.ship {
                     None => {}
                     Some(ref mut ship) => {
@@ -103,19 +111,31 @@ pub fn run() {
         }
 
         if now - prev_message_sent >= settings.message_interval_ms * 1_000_000 {
+			// prune timed out players
+			{
+			    let timedout_clients : Vec<SocketAddr> = clients.iter()
+			        .filter(|&(_key, client)| (now - client.last_message) / 1_000_000 > settings.client_timeout_ms)
+			        .map(|(key, _)| key.clone())
+			        .collect();
+			    for client in timedout_clients {
+			        println!("Timed out client {:?}", client);
+				    clients.remove(&client);
+			    }
+			}
+
             let game_status_msg = {
                 let mut message = ::capnp::message::Builder::new_default();
                 {
                     let mut p = message.init_root::<game_status::Builder>();
                     p.set_timestamp(now);
 
-                    let num_ships = clients.values().filter(|player| player.ship().is_some()).count();
+                    let num_ships = clients.values().filter(|client| client.pilot.ship().is_some()).count();
                     let mut ships = p.borrow().init_ships(num_ships as u32);
                     let mut count = 0;
 
-                    for player in clients.values()
+                    for client in clients.values()
                     {
-                        if let Some(ref ship) = player.ship {
+                        if let Some(ref ship) = client.pilot.ship {
                             let mut ship_msg = ships.borrow().get(count);
                             let velocity = ship.position - ship.prev_position;
                             ship_msg.set_id(0);

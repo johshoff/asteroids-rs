@@ -4,5 +4,6 @@
 "acceleration": 0.00003,
 "print_fps": false,
 "fullscreen": false,
-"message_interval_ms": 16
+"message_interval_ms": 16,
+"client_timeout_ms": 1000
 }

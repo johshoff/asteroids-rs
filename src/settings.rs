@@ -11,6 +11,7 @@ pub struct Settings  {
     pub print_fps:           bool,
     pub fullscreen:          bool,
     pub message_interval_ms: u64,
+    pub client_timeout_ms:   u64,
 }
 
 pub fn load_settings(filename: &str) -> Settings {
